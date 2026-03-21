@@ -14,11 +14,65 @@ const cookieOptions = {
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
 };
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
-  });
-};
+router.post("/login", async (req, res) => {
+  console.log(req.body);
+
+  const { user_email, user_password } = req.body;
+  if (!user_email || !user_password) {
+    return res
+      .status(400)
+      .json({ message: "Please provide email and password" });
+  }
+
+  try {
+    // Fetch user by email, join user_pass table to get hashed password
+    const userQuery = await pool.query(
+      `SELECT u.user_id, u.user_email, u.is_verified, ui.user_full_name, 
+              up.user_password_hashed
+       FROM users u
+       JOIN user_info ui ON u.user_id = ui.user_id
+       JOIN user_pass up ON u.user_id = up.user_id
+       WHERE u.user_email = $1`,
+      [user_email],
+    );
+
+    if (userQuery.rows.length === 0) {
+      return res.status(404).json({ message: "User does not exist" });
+    }
+
+    const user = userQuery.rows[0];
+
+    // Check password
+    const passwordMatch = await bcrypt.compare(
+      user_password,
+      user.user_password_hashed,
+    );
+    if (!passwordMatch) {
+      return res.status(401).json({ message: "Incorrect password" });
+    }
+
+    // Check email verification
+    if (!user.is_verified) {
+      return res.status(403).json({
+        message: "Please verify your email before logging in.",
+      });
+    }
+
+    // Successful login
+    return res.status(200).json({
+      status: "success",
+      data: {
+        user_id: user.user_id,
+        user_email: user.user_email,
+        user_full_name: user.user_full_name,
+      },
+      message: "Login successful",
+    });
+  } catch (err) {
+    console.error("Error logging in user:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
 
 // Register User
 router.post("/register", async (req, res) => {
@@ -99,13 +153,6 @@ router.post("/register", async (req, res) => {
       console.error("Verification email failed:", err);
     }
 
-    // Optionally generate JWT and set cookie
-    const jwtToken = generateToken(user_id); // implement generateToken()
-    res.cookie("token", jwtToken, {
-      httpOnly: true,
-      maxAge: hours * 3600 * 1000,
-    });
-
     return res.status(201).json({
       user: {
         user_id,
@@ -121,59 +168,38 @@ router.post("/register", async (req, res) => {
   }
 });
 
-//Login
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ message: "Please fill in all fields" });
-  }
-  const user = await pool.query("SELECT * FROM users WHERE email = $1", [
-    email,
-  ]);
-  if (user.rows.length === 0) {
-    return res.status(400).json({ message: "Invalid email credentials" });
-  }
-  const userData = user.rows[0];
-  const isMatch = await bcrypt.compare(password, userData.password);
-  if (!isMatch) {
-    return res.status(400).json({ message: "Invalid credentials, PWD" });
-  }
-  const token = generateToken(userData.id);
-  res.cookie("token", token, cookieOptions);
-  res.json({
-    user: {
-      id: userData.id,
-      name: userData.name,
-      email: userData.email,
-    },
-  });
-});
-
-router.get("/me", protect, async (req, res) => {
-  const token = req.cookies.token;
-  if (!token) {
-    return res.status(401).json({ message: "Not authorized" });
+router.post("/verify-email", async (req, res) => {
+  const { token, email } = req.body;
+  if (!token || !email) {
+    return res.status(400).json({ message: "Invalid verification link" });
   }
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await pool.query(
-      "SELECT id, name, email FROM users WHERE id = $1",
-      [decoded.id],
+    const userResult = await pool.query(
+      `SELECT user_id, verification_token_expires FROM users
+       WHERE user_email = $1 AND verification_token = $2`,
+      [email, token],
     );
-    if (user.rows.length === 0) {
-      return res.status(404).json({ message: "User not found" });
-    }
-    res.json({ user: user.rows[0] });
-  } catch (err) {
-    console.error(err);
-    res.status(401).json({ message: "Not authorized" });
-  }
-});
 
-router.get("/logout", (req, res) => {
-  res.clearCookie("token", cookieOptions); // Clear the cookie with the same options
-  // res.cookie("token", "", {...cookieOptions, maxAge:1}); // Set the cookie to expire immediately
-  res.json({ message: "Logged out successfully" });
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ message: "Invalid verification link" });
+    }
+
+    const user = userResult.rows[0];
+    if (user.verification_token_expires < new Date()) {
+      return res.status(400).json({ message: "Verification link has expired" });
+    }
+
+    await pool.query(
+      `UPDATE users SET is_verified = $1, verification_token = NULL, verification_token_expires = NULL
+       WHERE user_id = $2`,
+      [true, user.user_id],
+    );
+
+    return res.status(200).json({ message: "Email verified successfully!" });
+  } catch (err) {
+    console.error("Error verifying email:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
 });
 
 export default router;
