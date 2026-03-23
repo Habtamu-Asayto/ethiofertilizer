@@ -7,15 +7,7 @@ import { protect } from "../middleware/auth";
 import { sendVerificationEmail } from "../utils/mailer";
 const router = express.Router();
 
-const cookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "Strict",
-  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-};
-
-router.post("/login", async (req, res) => {
-  console.log(req.body);
+router.post("/login", async (req, res) => { 
 
   const { user_email, user_password } = req.body;
   if (!user_email || !user_password) {
@@ -58,6 +50,21 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    const token = jwt.sign(
+      { user_id: user.user_id, role_name: user.role_name },
+      "secretkey",
+      { expiresIn: "1h" },
+    );
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: false, // true if in production HTTPS
+      sameSite: "lax",
+      path: "/",
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+    });
+    console.log("Token:- ", token);
+
+    res.json({ token });
     // Successful login
     return res.status(200).json({
       status: "success",
@@ -200,6 +207,18 @@ router.post("/verify-email", async (req, res) => {
     console.error("Error verifying email:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
+});
+
+router.post("/logout", async (req, res) => {
+  // For JWT, logout is handled on client by deleting token
+  res.cookie("token", "", {
+    httpOnly: true,
+    secure: false,
+    sameSite: "lax",
+    path: "/",
+    expires: new Date(0),
+  });
+  res.json({ message: "Logged out successfully" });
 });
 
 export default router;
