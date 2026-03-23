@@ -6,7 +6,7 @@ import path from "path";
 const router = express.Router();
 
 router.get("/install", async (req, res) => {
-  const queryfile = path.join(__dirname, "sql/easyLearn.sql");
+  const queryfile = path.join(__dirname, "sql/fert_clean.sql");
 
   let queries: string[] = [];
   let tempLine = "";

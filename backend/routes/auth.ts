@@ -3,12 +3,10 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import pool from "../config/db";
-import { protect } from "../middleware/auth";
 import { sendVerificationEmail } from "../utils/mailer";
 const router = express.Router();
 
-router.post("/login", async (req, res) => { 
-
+router.post("/login", async (req, res) => {
   const { user_email, user_password } = req.body;
   if (!user_email || !user_password) {
     return res
@@ -21,7 +19,7 @@ router.post("/login", async (req, res) => {
     const userQuery = await pool.query(
       `SELECT u.user_id, u.user_email, u.is_verified, ui.user_full_name, 
               up.user_password_hashed
-       FROM users u
+       FROM user_login u
        JOIN user_info ui ON u.user_id = ui.user_id
        JOIN user_pass up ON u.user_id = up.user_id
        WHERE u.user_email = $1`,
@@ -51,27 +49,36 @@ router.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      { user_id: user.user_id, role_name: user.role_name },
+      {
+        user_id: user.user_id,
+        role_name: user.role_name,
+        user_email: user.user_email,
+        user_full_name: user.user_full_name,
+        profile_img: user.profile_img,
+        user_phone: user.user_phone,
+      },
       "secretkey",
       { expiresIn: "1h" },
     );
+
     res.cookie("token", token, {
       httpOnly: true,
-      secure: false, // true if in production HTTPS
+      secure: false,
       sameSite: "lax",
       path: "/",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
-    console.log("Token:- ", token);
 
-    res.json({ token });
-    // Successful login
     return res.status(200).json({
       status: "success",
+      token, // JWT
       data: {
         user_id: user.user_id,
+        role_name: user.role_name,
         user_email: user.user_email,
         user_full_name: user.user_full_name,
+        profile_img: user.profile_img,
+        user_phone: user.user_phone,
       },
       message: "Login successful",
     });
@@ -97,7 +104,7 @@ router.post("/register", async (req, res) => {
   try {
     // Check if email already exists
     const userExists = await pool.query(
-      "SELECT * FROM users WHERE user_email = $1",
+      "SELECT * FROM user_login WHERE user_email = $1",
       [user_email],
     );
     if (userExists.rows.length > 0) {
@@ -109,9 +116,9 @@ router.post("/register", async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(user_password, 10);
 
-    // Insert into users table
+    // Insert into user_login table
     const userInsert = await pool.query(
-      `INSERT INTO users (user_email, is_verified, created_at)
+      `INSERT INTO user_login (user_email, is_verified, created_at)
        VALUES ($1, $2, now())
        RETURNING user_id, user_email`,
       [user_email, false],
@@ -148,7 +155,7 @@ router.post("/register", async (req, res) => {
     const expires = new Date(Date.now() + hours * 3600 * 1000);
 
     await pool.query(
-      `UPDATE users SET verification_token = $1, verification_token_expires = $2
+      `UPDATE user_login SET verification_token = $1, verification_token_expires = $2
        WHERE user_id = $3`,
       [token, expires, user_id],
     );
@@ -182,7 +189,7 @@ router.post("/verify-email", async (req, res) => {
   }
   try {
     const userResult = await pool.query(
-      `SELECT user_id, verification_token_expires FROM users
+      `SELECT user_id, verification_token_expires FROM user_login
        WHERE user_email = $1 AND verification_token = $2`,
       [email, token],
     );
@@ -197,7 +204,7 @@ router.post("/verify-email", async (req, res) => {
     }
 
     await pool.query(
-      `UPDATE users SET is_verified = $1, verification_token = NULL, verification_token_expires = NULL
+      `UPDATE user_login SET is_verified = $1, verification_token = NULL, verification_token_expires = NULL
        WHERE user_id = $2`,
       [true, user.user_id],
     );
