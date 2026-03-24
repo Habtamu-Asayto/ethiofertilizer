@@ -918,7 +918,9 @@ CREATE TABLE IF NOT EXISTS zones (
   recTime TIMESTAMP
 );
 
-
+CREATE TABLE IF NOT EXISTS tets(
+  id serial primary key
+);
 
  
 
