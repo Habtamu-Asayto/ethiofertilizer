@@ -409,7 +409,7 @@ CREATE TABLE IF NOT EXISTS fert_demand (
 -- fert_demand_allocation
 CREATE TABLE IF NOT EXISTS fert_demand_allocation (
   fal_id SERIAL PRIMARY KEY,
-  year VARCHAR(12) NOT NULL,
+  year VARCHAR(12) NOT NULL, 
   union_id INTEGER NOT NULL,
   destination INTEGER NOT NULL,
   fert_type VARCHAR(20) NOT NULL,

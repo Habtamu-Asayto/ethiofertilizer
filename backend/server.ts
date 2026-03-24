@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import authRoutes from "./routes/auth";
 import installRoutes from "./routes/install";
+import primaryCooperative from "./routes/pc";
 
 dotenv.config();
 // --- Express App ---
@@ -25,6 +26,7 @@ app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
 app.use("/api", installRoutes);
+app.use("/api/pc",primaryCooperative)
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
